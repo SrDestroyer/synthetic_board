@@ -1,83 +1,58 @@
-# ⚡ Synthetic Board: AI Decision Architect
+# ⚡ Synthetic Board 3.0: Enterprise War Room
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python)
+![Version](https://img.shields.io/badge/Version-3.0%20Enterprise-blue?style=for-the-badge)
+![Python](https://img.shields.io/badge/Python-3.10%2B-yellow?style=for-the-badge&logo=python)
 ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit)
-![Gemini](https://img.shields.io/badge/Google%20Gemini-2.0%20Flash-8E75B2?style=for-the-badge&logo=google)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+![Gemini](https://img.shields.io/badge/AI-Gemini%202.0%20Flash-8E75B2?style=for-the-badge&logo=google)
+![Audio](https://img.shields.io/badge/Audio-Neural%20TTS-green?style=for-the-badge)
 
-> **Arquitectura Multi-Agente (SOTA)** que simula un Consejo Directivo Corporativo para la toma de decisiones estratégicas complejas.
-
----
-
-## 🧠 Sobre el Proyecto
-
-**Synthetic Board** no es un chatbot estándar. Es un sistema de orquestación de agentes que utiliza el patrón **Map-Reduce (Fan-Out/Fan-In)** para descomponer problemas de negocio.
-
-El sistema convoca a tres perfiles de IA especializados (CEO, CFO, COO) que analizan el problema en paralelo. Posteriormente, un cuarto agente ("El Presidente") agrega el contexto completo, evalúa los conflictos y emite un veredicto vinculante.
-
-### ✨ Características Clave
-* **🚀 Motor SOTA:** Impulsado por **Gemini 2.0 Flash**, aprovechando baja latencia y razonamiento avanzado.
-* **⚡ Ejecución Paralela:** Implementación de `ThreadPoolExecutor` para reducir la latencia de respuesta en un 60% (vs. ejecución secuencial).
-* **🎭 Personas Estrictas:** Prompt Engineering avanzado para asegurar que el CFO priorice finanzas y el CEO la visión, generando conflicto constructivo real.
-* **⚖️ Síntesis Agéntica:** Un meta-agente lee las posturas anteriores y genera una conclusión unificada (Hegelian Dialectic Synthesis).
-* **🔐 Seguridad:** Manejo de API Keys en memoria (Session State), sin almacenamiento en disco.
+> **Sistema de Soporte a la Decisión (DSS) Multi-Agente** que simula un Consejo Directivo Corporativo. Transforma problemas de negocio en estrategias accionables con análisis financiero, operativo y visión de mercado.
 
 ---
 
-## 🏗️ Arquitectura del Sistema
+## 🧠 Capacidades SOTA (State-of-the-Art)
 
-El flujo de datos sigue un patrón de **Decision Pipeline**:
+### 🚀 V3.0: Personalización y Multimodalidad
+* **🎭 Agentes Editables:** Configura en tiempo real quiénes forman tu consejo (ej. *"Elon Musk"* como CEO, *"Warren Buffet"* como CFO).
+* **🗣️ Interfaz de Voz (Jarvis):** El Presidente dicta la sentencia final mediante síntesis de voz neural (**gTTS**).
+* **📄 Reportes Ejecutivos:** Generación automática de **PDFs Profesionales** con gráficos financieros incrustados (`Matplotlib` + `FPDF`).
+* **📊 War Room Visual:** Los agentes no solo hablan; proyectan **gráficos de barras** basados en datos generados dinámicamente.
 
-```mermaid
-graph TD
-    User[👤 User Input] -->|Business Problem| Dispatcher{⚡ Task Dispatcher}
-    
-    subgraph "Parallel Agent Processing (Map Phase)"
-        Dispatcher -->|Thread 1| CEO[🦁 CEO Agent<br>Vision & Growth]
-        Dispatcher -->|Thread 2| CFO[💰 CFO Agent<br>Risk & Budget]
-        Dispatcher -->|Thread 3| COO[⚙️ COO Agent<br>Ops & Logistics]
-    end
-    
-    CEO --> Aggregator[📥 Context Aggregation]
-    CFO --> Aggregator
-    COO --> Aggregator
-    
-    subgraph "Synthesis (Reduce Phase)"
-        Aggregator -->|Full Debate Log| Chairman[👨‍⚖️ The Chairman<br>Final Verdict & KPIs]
-    end
-    
-    Chairman --> UI[🖥️ Streamlit Interface]
-🛠️ Instalación y Uso Local
-Prerrequisitos
-Python 3.10 o superior.
+### 🏗️ Arquitectura Core
+* **Map-Reduce Pattern:** Ejecución paralela de 3 roles (CEO, CFO, COO) + 1 Sintetizador (Presidente).
+* **RAG-Lite:** Ingesta de archivos de contexto (`.txt`, `.csv`) para análisis basado en datos reales.
+* **Persistencia de Estado:** Sesiones fluidas que no pierden datos al interactuar con la UI.
+* **Blindaje Lingüístico:** Prompt Engineering avanzado para forzar respuestas estrictas en **Español, Inglés o Francés**.
 
-Una API Key de Google AI Studio.
+---
 
-1. Clonar el Repositorio
+## 🛠️ Instalación Local
+
+### Prerrequisitos
+* Python 3.10 o superior.
+* Una API Key de [Google AI Studio](https://aistudio.google.com/).
+
+### 1. Clonar el Repositorio
+```bash
+git clone [https://github.com/TU_USUARIO/synthetic-board.git](https://github.com/TU_USUARIO/synthetic-board.git)
+cd synthetic-board
+2. Entorno Virtual
 Bash
 
-git clone [https://github.com/tu-usuario/synthetic-board.git](https://github.com/tu-usuario/synthetic-board.git)
-cd synthetic-board
-2. Configurar Entorno Virtual
-Se recomienda aislar las dependencias:
-
-Windows:
-
-PowerShell
-
+# Windows
 python -m venv venv
 .\venv\Scripts\activate
-Mac/Linux:
 
-Bash
-
+# Mac/Linux
 python3 -m venv venv
 source venv/bin/activate
 3. Instalar Dependencias
 Bash
 
 pip install -r requirements.txt
-4. Ejecutar Aplicación
+(Incluye: streamlit, google-genai, pandas, matplotlib, fpdf, gTTS)
+
+4. Lanzar la War Room
 Bash
 
 streamlit run app.py
@@ -85,25 +60,52 @@ streamlit run app.py
 Plaintext
 
 synthetic-board/
-├── app.py               # Lógica Core (UI + Orquestación Agentes)
-├── requirements.txt     # Dependencias (streamlit, google-genai)
-└── README.md            # Documentación
-🧪 Ejemplo de Uso
-Input del Usuario:
+├── app.py               # Código Maestro (Monolito V3.0)
+├── requirements.txt     # Dependencias de producción
+├── README.md            # Documentación Oficial
+└── .gitignore           # Configuración de seguridad git
+🧪 Ejemplo de Uso (Flow)
+Configuración (Sidebar):
 
-"Queremos implementar una semana laboral de 4 días manteniendo el 100% del salario."
+Define al CEO como "Steve Jobs" (Enfoque: Diseño).
 
-Respuesta del Sistema:
+Selecciona idioma "Español".
 
-CEO: Aprueba por impacto en marca y atracción de talento.
+Input: "Queremos eliminar el trabajo remoto para fomentar la creatividad."
 
-CFO: Rechaza rotundamente por impacto en márgenes y coste unitario.
+Procesamiento:
 
-COO: Solicita análisis de turnos y advierte sobre caída de soporte al cliente.
+CEO (Steve Jobs): Apoya la medida para interacción cara a cara.
 
-PRESIDENTE: Dictamina realizar un Programa Piloto A/B en un departamento no crítico durante 3 meses antes de decidir.
+CFO: Alerta sobre costos de oficina y riesgo de fuga de talento.
 
-🛡️ Disclaimer
-Este proyecto utiliza Modelos de Lenguaje Grande (LLMs). Las decisiones estratégicas reales deben ser validadas por profesionales humanos.
+COO: Proyecta gráfico de caída de productividad transitoria.
 
-Built with 💻 by [Fco.JavierPradoGuerrero]
+Resolución (Presidente):
+
+Emite un veredicto híbrido (3 días oficina / 2 remoto).
+
+Audio: Escuchas la decisión.
+
+PDF: Descargas el informe con el gráfico de costes del CFO.
+
+🛡️ Seguridad & Privacidad
+API Keys: Se procesan en memoria RAM y nunca se guardan en disco.
+
+Archivos: Los documentos subidos y gráficos temporales se eliminan inmediatamente tras su uso (tempfile + os.unlink).
+
+Desarrollado con 💻 por [Tu Nombre]
+
+
+### 🚀 Último Push
+
+Para que esto se refleje en tu GitHub:
+
+1.  Copia el código de arriba en tu archivo `README.md`.
+2.  Guarda.
+3.  Ejecuta en la terminal:
+    ```powershell
+    git add README.md
+    git commit -m "Docs: Update README to V3.0 Enterprise specs"
+    git push
+    ```
