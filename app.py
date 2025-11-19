@@ -3,173 +3,210 @@ from google import genai
 from google.genai import types
 from concurrent.futures import ThreadPoolExecutor
 import time
+import pandas as pd
+import json
+import re
 
-# --- TRON ARCHITECTURE: CONFIG & SETUP ---
+# --- CONFIGURACIÓN ---
 st.set_page_config(
-    page_title="Synthetic Board: AI Decision Architect",
+    page_title="Synthetic Board 2.0: War Room",
     page_icon="⚡",
     layout="wide"
 )
 
-# Estilos CSS inyectados para una estética Cyberpunk/Tech limpia
 st.markdown("""
     <style>
-    .stChatMessage {border: 1px solid #444; border-radius: 10px;}
-    .agent-card {padding: 15px; border-radius: 8px; background-color: #1E1E1E; border-left: 4px solid;}
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] {
+        background-color: #1E1E1E; border-radius: 5px; padding: 10px 20px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #4CAF50; color: white;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# --- LOGIC CORE: AGENT ORCHESTRATION ---
+# --- LÓGICA DE AGENTES ---
 
-def get_agent_response(role: str, focus: str, problem: str, api_key: str, language: str) -> str:
+def get_agent_response(role: str, focus: str, problem: str, context_file: str, api_key: str, language: str) -> dict:
     try:
         client = genai.Client(api_key=api_key)
         
-        # INYECCIÓN DE IDIOMA: Mantenemos la lógica en inglés para precisión,
-        # pero forzamos la salida al idioma seleccionado.
         prompt = f"""
         ACT AS: {role} of a major corporation.
         PRIME DIRECTIVE: Focus exclusively on {focus}.
-        INPUT: The user presents the following business problem: "{problem}"
         
-        CRITICAL OUTPUT INSTRUCTION: 
-        You MUST respond strictly in the following language: {language}.
-        Do not mix languages. Translate your professional persona to {language}.
+        CONTEXT FROM FILES: {context_file}
+        INPUT PROBLEM: "{problem}"
         
-        OUTPUT: Provide a concise, high-impact strategic analysis (max 150 words).
+        CRITICAL INSTRUCTION:
+        You MUST respond in strict JSON format with the following structure keys:
+        1. "analysis": (String) Your strategic analysis in {language}. Max 200 words. Use Markdown for formatting.
+        2. "chart_title": (String) A title for a chart supporting your view in {language}.
+        3. "chart_data": (Dictionary) Key-Value pairs for a bar chart (e.g., {{"Risk": 80, "Profit": 20}}). Values must be numeric.
+        
+        Output ONLY the JSON object. Do not wrap it in a list.
         """
         
         response = client.models.generate_content(
             model="gemini-2.0-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
-                temperature=0.8, 
-                max_output_tokens=500 # Aumentado un poco para idiomas verbosos
+                temperature=0.7, 
+                response_mime_type="application/json"
             )
         )
         
-        if response.text:
-            return response.text
-        else:
-            return f"⚠️ Respuesta vacía ({role}). Intente de nuevo."
+        try:
+            data = json.loads(response.text)
+            if isinstance(data, list):
+                data = data[0] if len(data) > 0 else {"analysis": "⚠️ JSON vacío.", "chart_data": {}}
+            if not isinstance(data, dict):
+                return {"analysis": f"⚠️ Error formato: {type(data)}", "chart_data": {}}
+            return data
+            
+        except json.JSONDecodeError:
+            return {"analysis": "⚠️ Error decodificando JSON.", "chart_title": "Error", "chart_data": {}}
             
     except Exception as e:
-        return f"⚠️ **Error de Conexión:** {str(e)}"
+        return {"analysis": f"⚠️ Error Crítico: {str(e)}", "chart_data": {}}
 
-# --- UI LAYER: REACTIVE INTERFACE ---
+# --- UI PRINCIPAL ---
 
 def main():
-    # 1. Sidebar: Security & Config
+    # Inicializar Estado de Sesión para persistencia
+    if "debate_data" not in st.session_state:
+        st.session_state.debate_data = None
+    if "current_prompt" not in st.session_state:
+        st.session_state.current_prompt = ""
+    if "verdict" not in st.session_state:
+        st.session_state.verdict = None
+
+    # 1. SIDEBAR
     with st.sidebar:
-        st.title("🔐 Secure Gateway")
-        api_key = st.text_input("Google Gen AI API Key", type="password", help="Tu llave no se guarda.")
-        
+        st.title("🎛️ Command Center")
+        api_key = st.text_input("Google Gen AI API Key", type="password")
         st.markdown("---")
-        st.subheader("🌐 Configuración Global")
+        uploaded_file = st.file_uploader("Subir datos (TXT, CSV, MD)", type=["txt", "csv", "md"])
         
-        # SELECTOR DE IDIOMA (Top 5 + Bonus)
-        selected_lang = st.selectbox(
-            "Idioma de Respuesta / Language",
-            ["Español", "English", "中文 (Chinese Mandarin)", "हिन्दी (Hindi)", "العربية (Arabic)", "Français"]
-        )
+        file_content = ""
+        if uploaded_file is not None:
+            try:
+                file_content = uploaded_file.read().decode("utf-8")
+                st.success(f"✅ {uploaded_file.name} indexado.")
+            except:
+                st.error("Error leyendo archivo.")
+
+        selected_lang = st.selectbox("Idioma / Language", ["Español", "English", "Français"])
         
-        st.markdown("---")
-        st.caption(f"Mode: {selected_lang}")
-        st.caption("Engine: Gemini 2.0 Flash")
+        # Botón de reinicio manual
+        if st.button("🗑️ Resetear Sala de Guerra"):
+            st.session_state.debate_data = None
+            st.session_state.verdict = None
+            st.rerun()
 
-    # 2. Main Header
-    st.title("⚡ Synthetic Board: AI Decision Architect")
-    st.markdown(f"Presenta tu desafío. El Consejo debatirá en **{selected_lang}**.")
-
-    # 3. Session State
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    # Display history
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # 4. Input Logic
-    if prompt := st.chat_input("Describe tu situación estratégica..."):
-        
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
+    # 2. HEADER
+    st.title("⚡ Synthetic Board 2.0: War Room")
+    
+    # 3. INPUT (Lógica de Disparo)
+    # Si el usuario escribe algo nuevo, disparamos el proceso y guardamos en session_state
+    if prompt := st.chat_input("Escribe el desafío estratégico aquí..."):
         if not api_key:
-            st.error("⛔ Alerta: Inserte su API Key en el menú lateral.")
+            st.error("⛔ Falta API Key.")
             return
+        
+        st.session_state.current_prompt = prompt
+        st.session_state.verdict = None # Limpiamos veredicto anterior
 
-        with st.chat_message("assistant"):
-            st.write(f"🔄 Convocando al Consejo en {selected_lang}...")
-            
-            agents = [
-                {"role": "CEO (Visionario)", "focus": "Growth, Brand, Long-term Vision, Disruption", "color": "#FF4B4B"},
-                {"role": "CFO (Crítico)", "focus": "Risk Management, Cash Flow, Audit, Profitability", "color": "#FFA500"},
-                {"role": "COO (Ejecutor)", "focus": "Logistics, Processes, Efficiency, Execution", "color": "#00D4FF"}
-            ]
-
-            results = []
-            start_time = time.time()
-            
-            # PASAMOS EL IDIOMA A LOS HILOS
+        # Ejecución de Agentes
+        st.write(f"🧠 **Analizando:** '{prompt}'")
+        
+        agents = [
+            {"role": "CEO (Visionario)", "focus": "Growth, Brand, Innovation", "icon": "🦁"},
+            {"role": "CFO (Crítico)", "focus": "Cost, Risk, ROI, Audit", "icon": "💰"},
+            {"role": "COO (Ejecutor)", "focus": "Logistics, Efficiency, Ops", "icon": "⚙️"}
+        ]
+        
+        temp_results = {}
+        with st.spinner("🔄 Los agentes están generando simulaciones gráficas..."):
             with ThreadPoolExecutor(max_workers=3) as executor:
                 futures = {
-                    executor.submit(get_agent_response, agent["role"], agent["focus"], prompt, api_key, selected_lang): agent 
-                    for agent in agents
+                    executor.submit(get_agent_response, a["role"], a["focus"], prompt, file_content, api_key, selected_lang): a 
+                    for a in agents
                 }
-                
                 for future in futures:
-                    agent_info = futures[future]
-                    try:
-                        text = future.result()
-                        results.append({"role": agent_info["role"], "text": text, "color": agent_info["color"]})
-                    except Exception as exc:
-                        results.append({"role": agent_info["role"], "text": f"Error: {exc}", "color": "#FF0000"})
+                    agent_meta = futures[future]
+                    temp_results[agent_meta["role"]] = future.result()
+        
+        # GUARDAMOS EN ESTADO PERSISTENTE
+        st.session_state.debate_data = temp_results
+        st.rerun() # Recargamos para mostrar los resultados limpios
 
-            latency = time.time() - start_time
-            st.caption(f"⚡ Consejo reunido en {latency:.2f}s")
+    # 4. RENDERIZADO (Solo si hay datos en memoria)
+    if st.session_state.debate_data:
+        
+        st.info(f"📋 Desafío Actual: **{st.session_state.current_prompt}**")
+        
+        tab1, tab2, tab3, tab4 = st.tabs(["🦁 CEO", "💰 CFO", "⚙️ COO", "⚖️ Presidente"])
 
-            cols = st.columns(3)
-            full_response_log = ""
+        def render_agent_tab(tab, agent_role, data):
+            with tab:
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.subheader(f"Análisis del {agent_role}")
+                    st.markdown(data.get("analysis", "Sin datos"))
+                with col2:
+                    st.subheader("📊 Proyección")
+                    st.caption(data.get("chart_title", "Métricas"))
+                    chart_data = data.get("chart_data", {})
+                    if chart_data:
+                        df = pd.DataFrame(list(chart_data.items()), columns=["Concepto", "Valor"])
+                        st.bar_chart(df.set_index("Concepto"))
+                    else:
+                        st.warning("No hay datos gráficos.")
+
+        results = st.session_state.debate_data
+        render_agent_tab(tab1, "CEO (Visionario)", results["CEO (Visionario)"])
+        render_agent_tab(tab2, "CFO (Crítico)", results["CFO (Crítico)"])
+        render_agent_tab(tab3, "COO (Ejecutor)", results["COO (Ejecutor)"])
+
+        # 5. LOGICA DEL PRESIDENTE (Ahora fuera del bloque chat_input)
+        with tab4:
+            st.header("👨‍⚖️ Veredicto Final")
             
-            for idx, col in enumerate(cols):
-                res = results[idx] 
-                with col:
-                    st.markdown(f"<div style='border-bottom: 3px solid {res['color']}; margin-bottom: 10px;'><b>{res['role']}</b></div>", unsafe_allow_html=True)
-                    st.markdown(res["text"])
-                    full_response_log += f"**{res['role']} ({selected_lang}):**\n{res['text']}\n\n"
-
-            st.session_state.messages.append({"role": "assistant", "content": full_response_log})
-
-            # --- FASE 2: PRESIDENTE MULTILINGÜE ---
-            st.markdown("---")
-            st.subheader("⚖️ Resolución Vinculante")
-            
-            with st.status("🧠 Sintetizando posturas...", expanded=True) as status:
-                st.write("📥 Analizando conflicto...")
-                
-                board_debate_log = f"""
-                PROBLEM: {prompt}
-                LANGUAGE CONTEXT: {selected_lang}
-                OPINION CEO: {results[0]['text']}
-                OPINION CFO: {results[1]['text']}
-                OPINION COO: {results[2]['text']}
-                """
-                
-                verdict = get_agent_response(
-                    role="Presidente del Consejo (The Chairman)",
-                    focus="Synthesize arguments, make a FINAL binding decision. Be authoritative.",
-                    problem=board_debate_log,
-                    api_key=api_key,
-                    language=selected_lang # <-- El Presidente también habla el idioma
-                )
-                
-                status.update(label="✅ Dictamen Finalizado", state="complete", expanded=False)
-
-            st.info(f"**DICTAMEN FINAL:**\n\n{verdict}", icon="👨‍⚖️")
-            st.session_state.messages.append({"role": "assistant", "content": f"**VEREDICTO:**\n{verdict}"})
+            # Si ya hay veredicto guardado, lo mostramos
+            if st.session_state.verdict:
+                st.success("Dictamen Emitido:")
+                st.markdown(st.session_state.verdict)
+                if st.button("🔄 Re-evaluar"):
+                    st.session_state.verdict = None
+                    st.rerun()
+            else:
+                # Si no, mostramos el botón para generarlo
+                if st.button("🔨 Emitir Sentencia Vinculante"):
+                    if not api_key:
+                        st.error("Falta API Key")
+                    else:
+                        with st.spinner("El Presidente está deliberando..."):
+                            client = genai.Client(api_key=api_key)
+                            debate_context = json.dumps(st.session_state.debate_data)
+                            
+                            final_prompt = f"""
+                            ACT AS: Chairman of the Board.
+                            INPUT: Review JSON analysis from CEO, CFO, COO: {debate_context}
+                            PROBLEM: {st.session_state.current_prompt}
+                            LANGUAGE: {selected_lang}
+                            OUTPUT: A Markdown summary of the decision. Be authoritative.
+                            """
+                            
+                            response = client.models.generate_content(
+                                model="gemini-2.0-flash",
+                                contents=final_prompt
+                            )
+                            
+                            # Guardamos el veredicto en estado y recargamos
+                            st.session_state.verdict = response.text
+                            st.rerun()
 
 if __name__ == "__main__":
     main()
