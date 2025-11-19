@@ -6,10 +6,15 @@ import time
 import pandas as pd
 import json
 import re
+import matplotlib.pyplot as plt
+import io
+import tempfile
+import os
+from fpdf import FPDF
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(
-    page_title="Synthetic Board 2.0: War Room",
+    page_title="Synthetic Board 2.1: War Room",
     page_icon="⚡",
     layout="wide"
 )
@@ -23,6 +28,7 @@ st.markdown("""
     .stTabs [aria-selected="true"] {
         background-color: #4CAF50; color: white;
     }
+    .stChatMessage {border: 1px solid #444; border-radius: 10px;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -71,10 +77,162 @@ def get_agent_response(role: str, focus: str, problem: str, context_file: str, a
     except Exception as e:
         return {"analysis": f"⚠️ Error Crítico: {str(e)}", "chart_data": {}}
 
+# --- MOTOR DE VISUALIZACIÓN & REPORTES SOTA ---
+
+def generate_chart_image(chart_data, title, color_hex):
+    """Genera un gráfico de barras moderno en memoria (BytesIO)"""
+    if not chart_data:
+        return None
+    
+    try:
+        # Configuración de estilo limpio
+        plt.style.use('seaborn-v0_8-darkgrid') 
+        fig, ax = plt.subplots(figsize=(6, 3.5))
+        
+        # Extraer datos
+        categories = list(chart_data.keys())
+        values = list(chart_data.values())
+        
+        # Crear barras con el color del agente
+        bars = ax.bar(categories, values, color=color_hex, alpha=0.8)
+        
+        # Estética
+        ax.set_title(title, fontsize=12, fontweight='bold', color='#333333')
+        ax.tick_params(axis='x', rotation=15, colors='#555555')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
+        # Añadir valores
+        for bar in bars:
+            height = bar.get_height()
+            ax.annotate(f'{height}',
+                        xy=(bar.get_x() + bar.get_width() / 2, height),
+                        xytext=(0, 3),
+                        textcoords="offset points",
+                        ha='center', va='bottom', fontsize=9)
+
+        img_buffer = io.BytesIO()
+        plt.savefig(img_buffer, format='png', bbox_inches='tight', dpi=150)
+        plt.close(fig)
+        img_buffer.seek(0)
+        return img_buffer
+    except Exception as e:
+        return None
+
+def create_pdf(prompt, debate_data, verdict, language):
+    class ModernPDF(FPDF):
+        def header(self):
+            self.set_fill_color(30, 30, 30)
+            self.rect(0, 0, 210, 25, 'F')
+            self.set_font('Arial', 'B', 16)
+            self.set_text_color(255, 255, 255)
+            self.set_xy(10, 8)
+            self.cell(0, 10, 'SYNTHETIC BOARD // WAR ROOM REPORT', 0, 0, 'L')
+            self.ln(20)
+
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('Arial', 'I', 8)
+            self.set_text_color(128, 128, 128)
+            self.cell(0, 10, f'AI Generated Strategy | Page {self.page_no()}', 0, 0, 'C')
+            
+        def section_title(self, label, color_rgb):
+            self.set_fill_color(*color_rgb)
+            self.rect(10, self.get_y(), 190, 8, 'F')
+            self.set_font('Arial', 'B', 12)
+            self.set_text_color(255, 255, 255)
+            self.set_xy(12, self.get_y() + 1)
+            self.cell(0, 6, label, 0, 1, 'L')
+            self.ln(4)
+            self.set_text_color(0, 0, 0)
+
+    pdf = ModernPDF()
+    pdf.add_page()
+    
+    def safe_text(text):
+        if not text: return ""
+        return text.encode('latin-1', 'replace').decode('latin-1')
+
+    # 1. RESUMEN EJECUTIVO
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "MISSION OBJECTIVE (INPUT):", 0, 1)
+    pdf.set_font("Arial", size=11)
+    pdf.set_text_color(50, 50, 50)
+    pdf.multi_cell(0, 6, safe_text(prompt))
+    pdf.ln(8)
+
+    # 2. ANÁLISIS DE AGENTES
+    if debate_data:
+        agent_configs = {
+            "CEO (Visionario)": {"color": (255, 75, 75), "hex": "#FF4B4B"},
+            "CFO (Crítico)": {"color": (255, 165, 0), "hex": "#FFA500"},
+            "COO (Ejecutor)": {"color": (0, 212, 255), "hex": "#00D4FF"}
+        }
+
+        for role, data in debate_data.items():
+            config = agent_configs.get(role, {"color": (100, 100, 100), "hex": "#666666"})
+            
+            pdf.section_title(safe_text(role.upper()), config["color"])
+            
+            pdf.set_font("Arial", size=10)
+            analysis_text = safe_text(data.get("analysis", "No data"))
+            pdf.multi_cell(0, 5, analysis_text)
+            pdf.ln(3)
+            
+            # --- TRON FIX: Manejo seguro de imágenes temporales ---
+            chart_data = data.get("chart_data", {})
+            if chart_data:
+                try:
+                    img_stream = generate_chart_image(
+                        chart_data, 
+                        data.get("chart_title", "Metrics"), 
+                        config["hex"]
+                    )
+                    if img_stream:
+                        # Creamos un archivo temporal físico para que FPDF no falle
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
+                            tmpfile.write(img_stream.getvalue())
+                            tmp_filename = tmpfile.name
+                        
+                        # Insertamos usando la ruta del archivo
+                        pdf.image(tmp_filename, x=55, w=100)
+                        pdf.ln(5)
+                        
+                        # Limpieza inmediata
+                        os.unlink(tmp_filename)
+                        
+                except Exception as e:
+                    pdf.set_font("Courier", size=8)
+                    pdf.cell(0, 5, f"[Chart Error: {safe_text(str(e))}]", 0, 1)
+            
+            pdf.ln(5)
+
+    # 3. VEREDICTO FINAL
+    pdf.add_page()
+    pdf.set_fill_color(0, 0, 0)
+    pdf.rect(0, 25, 210, 5, 'F')
+    pdf.ln(10)
+    
+    pdf.set_font("Arial", 'B', 18)
+    pdf.cell(0, 10, "FINAL BINDING VERDICT", 0, 1, 'C')
+    pdf.ln(5)
+    
+    pdf.set_fill_color(240, 240, 240)
+    pdf.set_font("Arial", size=12)
+    pdf.multi_cell(0, 8, safe_text(verdict), fill=True)
+    
+    pdf.set_y(-40)
+    pdf.line(20, 270, 80, 270)
+    pdf.line(130, 270, 190, 270)
+    pdf.set_font("Arial", 'I', 8)
+    pdf.text(20, 275, "Digitally Signed: The Chairman")
+    pdf.text(130, 275, f"Date: {safe_text(language)}")
+
+    return pdf.output(dest='S').encode('latin-1')
+
 # --- UI PRINCIPAL ---
 
 def main():
-    # Inicializar Estado de Sesión para persistencia
     if "debate_data" not in st.session_state:
         st.session_state.debate_data = None
     if "current_prompt" not in st.session_state:
@@ -82,7 +240,6 @@ def main():
     if "verdict" not in st.session_state:
         st.session_state.verdict = None
 
-    # 1. SIDEBAR
     with st.sidebar:
         st.title("🎛️ Command Center")
         api_key = st.text_input("Google Gen AI API Key", type="password")
@@ -99,26 +256,21 @@ def main():
 
         selected_lang = st.selectbox("Idioma / Language", ["Español", "English", "Français"])
         
-        # Botón de reinicio manual
         if st.button("🗑️ Resetear Sala de Guerra"):
             st.session_state.debate_data = None
             st.session_state.verdict = None
             st.rerun()
 
-    # 2. HEADER
-    st.title("⚡ Synthetic Board 2.0: War Room")
+    st.title("⚡ Synthetic Board 2.1: War Room")
     
-    # 3. INPUT (Lógica de Disparo)
-    # Si el usuario escribe algo nuevo, disparamos el proceso y guardamos en session_state
     if prompt := st.chat_input("Escribe el desafío estratégico aquí..."):
         if not api_key:
             st.error("⛔ Falta API Key.")
             return
         
         st.session_state.current_prompt = prompt
-        st.session_state.verdict = None # Limpiamos veredicto anterior
+        st.session_state.verdict = None 
 
-        # Ejecución de Agentes
         st.write(f"🧠 **Analizando:** '{prompt}'")
         
         agents = [
@@ -138,11 +290,9 @@ def main():
                     agent_meta = futures[future]
                     temp_results[agent_meta["role"]] = future.result()
         
-        # GUARDAMOS EN ESTADO PERSISTENTE
         st.session_state.debate_data = temp_results
-        st.rerun() # Recargamos para mostrar los resultados limpios
+        st.rerun() 
 
-    # 4. RENDERIZADO (Solo si hay datos en memoria)
     if st.session_state.debate_data:
         
         st.info(f"📋 Desafío Actual: **{st.session_state.current_prompt}**")
@@ -170,19 +320,35 @@ def main():
         render_agent_tab(tab2, "CFO (Crítico)", results["CFO (Crítico)"])
         render_agent_tab(tab3, "COO (Ejecutor)", results["COO (Ejecutor)"])
 
-        # 5. LOGICA DEL PRESIDENTE (Ahora fuera del bloque chat_input)
         with tab4:
             st.header("👨‍⚖️ Veredicto Final")
             
-            # Si ya hay veredicto guardado, lo mostramos
             if st.session_state.verdict:
                 st.success("Dictamen Emitido:")
                 st.markdown(st.session_state.verdict)
+                
+                with st.spinner("📄 Generando Informe Oficial con Gráficos..."):
+                    try:
+                        pdf_bytes = create_pdf(
+                            st.session_state.current_prompt,
+                            st.session_state.debate_data,
+                            st.session_state.verdict,
+                            selected_lang
+                        )
+                        
+                        st.download_button(
+                            label="📄 Descargar Informe Oficial (PDF)",
+                            data=pdf_bytes,
+                            file_name="synthetic_board_report.pdf",
+                            mime="application/pdf"
+                        )
+                    except Exception as e:
+                        st.error(f"Error generando PDF: {str(e)}")
+                
                 if st.button("🔄 Re-evaluar"):
                     st.session_state.verdict = None
                     st.rerun()
             else:
-                # Si no, mostramos el botón para generarlo
                 if st.button("🔨 Emitir Sentencia Vinculante"):
                     if not api_key:
                         st.error("Falta API Key")
@@ -204,7 +370,6 @@ def main():
                                 contents=final_prompt
                             )
                             
-                            # Guardamos el veredicto en estado y recargamos
                             st.session_state.verdict = response.text
                             st.rerun()
 
