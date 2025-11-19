@@ -11,10 +11,11 @@ import io
 import tempfile
 import os
 from fpdf import FPDF
+from gtts import gTTS
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(
-    page_title="Synthetic Board 2.1: War Room",
+    page_title="Synthetic Board 2.2: Jarvis Edition",
     page_icon="⚡",
     layout="wide"
 )
@@ -77,40 +78,44 @@ def get_agent_response(role: str, focus: str, problem: str, context_file: str, a
     except Exception as e:
         return {"analysis": f"⚠️ Error Crítico: {str(e)}", "chart_data": {}}
 
-# --- MOTOR DE VISUALIZACIÓN & REPORTES SOTA ---
+# --- MOTOR MULTIMEDIA & REPORTES ---
 
-def generate_chart_image(chart_data, title, color_hex):
-    """Genera un gráfico de barras moderno en memoria (BytesIO)"""
-    if not chart_data:
-        return None
+def generate_audio(text, lang_name):
+    """Convierte texto a audio MP3 en memoria"""
+    if not text: return None
+    
+    lang_map = {
+        "Español": "es",
+        "English": "en",
+        "Français": "fr"
+    }
+    iso_code = lang_map.get(lang_name, "en")
     
     try:
-        # Configuración de estilo limpio
+        tts = gTTS(text=text, lang=iso_code, slow=False)
+        audio_buffer = io.BytesIO()
+        tts.write_to_fp(audio_buffer)
+        audio_buffer.seek(0)
+        return audio_buffer
+    except Exception as e:
+        return None
+
+def generate_chart_image(chart_data, title, color_hex):
+    if not chart_data: return None
+    try:
         plt.style.use('seaborn-v0_8-darkgrid') 
         fig, ax = plt.subplots(figsize=(6, 3.5))
-        
-        # Extraer datos
         categories = list(chart_data.keys())
         values = list(chart_data.values())
-        
-        # Crear barras con el color del agente
         bars = ax.bar(categories, values, color=color_hex, alpha=0.8)
-        
-        # Estética
         ax.set_title(title, fontsize=12, fontweight='bold', color='#333333')
         ax.tick_params(axis='x', rotation=15, colors='#555555')
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        
-        # Añadir valores
         for bar in bars:
             height = bar.get_height()
-            ax.annotate(f'{height}',
-                        xy=(bar.get_x() + bar.get_width() / 2, height),
-                        xytext=(0, 3),
-                        textcoords="offset points",
-                        ha='center', va='bottom', fontsize=9)
-
+            ax.annotate(f'{height}', xy=(bar.get_x() + bar.get_width() / 2, height),
+                        xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=9)
         img_buffer = io.BytesIO()
         plt.savefig(img_buffer, format='png', bbox_inches='tight', dpi=150)
         plt.close(fig)
@@ -151,72 +156,51 @@ def create_pdf(prompt, debate_data, verdict, language):
     
     def safe_text(text):
         if not text: return ""
+        # Limpieza agresiva de caracteres no soportados por latin-1 (ej. asteriscos de markdown)
+        text = text.replace('**', '').replace('*', '-').replace('###', '')
         return text.encode('latin-1', 'replace').decode('latin-1')
 
-    # 1. RESUMEN EJECUTIVO
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "MISSION OBJECTIVE (INPUT):", 0, 1)
+    pdf.cell(0, 10, "MISSION OBJECTIVE:", 0, 1)
     pdf.set_font("Arial", size=11)
     pdf.set_text_color(50, 50, 50)
     pdf.multi_cell(0, 6, safe_text(prompt))
     pdf.ln(8)
 
-    # 2. ANÁLISIS DE AGENTES
     if debate_data:
         agent_configs = {
             "CEO (Visionario)": {"color": (255, 75, 75), "hex": "#FF4B4B"},
             "CFO (Crítico)": {"color": (255, 165, 0), "hex": "#FFA500"},
             "COO (Ejecutor)": {"color": (0, 212, 255), "hex": "#00D4FF"}
         }
-
         for role, data in debate_data.items():
             config = agent_configs.get(role, {"color": (100, 100, 100), "hex": "#666666"})
-            
             pdf.section_title(safe_text(role.upper()), config["color"])
-            
             pdf.set_font("Arial", size=10)
-            analysis_text = safe_text(data.get("analysis", "No data"))
-            pdf.multi_cell(0, 5, analysis_text)
+            pdf.multi_cell(0, 5, safe_text(data.get("analysis", "No data")))
             pdf.ln(3)
             
-            # --- TRON FIX: Manejo seguro de imágenes temporales ---
             chart_data = data.get("chart_data", {})
             if chart_data:
                 try:
-                    img_stream = generate_chart_image(
-                        chart_data, 
-                        data.get("chart_title", "Metrics"), 
-                        config["hex"]
-                    )
+                    img_stream = generate_chart_image(chart_data, data.get("chart_title", "Metrics"), config["hex"])
                     if img_stream:
-                        # Creamos un archivo temporal físico para que FPDF no falle
                         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
                             tmpfile.write(img_stream.getvalue())
                             tmp_filename = tmpfile.name
-                        
-                        # Insertamos usando la ruta del archivo
                         pdf.image(tmp_filename, x=55, w=100)
-                        pdf.ln(5)
-                        
-                        # Limpieza inmediata
                         os.unlink(tmp_filename)
-                        
-                except Exception as e:
-                    pdf.set_font("Courier", size=8)
-                    pdf.cell(0, 5, f"[Chart Error: {safe_text(str(e))}]", 0, 1)
-            
+                        pdf.ln(5)
+                except: pass
             pdf.ln(5)
 
-    # 3. VEREDICTO FINAL
     pdf.add_page()
     pdf.set_fill_color(0, 0, 0)
     pdf.rect(0, 25, 210, 5, 'F')
     pdf.ln(10)
-    
     pdf.set_font("Arial", 'B', 18)
     pdf.cell(0, 10, "FINAL BINDING VERDICT", 0, 1, 'C')
     pdf.ln(5)
-    
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", size=12)
     pdf.multi_cell(0, 8, safe_text(verdict), fill=True)
@@ -244,33 +228,29 @@ def main():
         st.title("🎛️ Command Center")
         api_key = st.text_input("Google Gen AI API Key", type="password")
         st.markdown("---")
-        uploaded_file = st.file_uploader("Subir datos (TXT, CSV, MD)", type=["txt", "csv", "md"])
-        
+        uploaded_file = st.file_uploader("Contexto (TXT, CSV, MD)", type=["txt", "csv", "md"])
         file_content = ""
-        if uploaded_file is not None:
+        if uploaded_file:
             try:
                 file_content = uploaded_file.read().decode("utf-8")
                 st.success(f"✅ {uploaded_file.name} indexado.")
-            except:
-                st.error("Error leyendo archivo.")
+            except: st.error("Error leyendo archivo.")
 
         selected_lang = st.selectbox("Idioma / Language", ["Español", "English", "Français"])
         
-        if st.button("🗑️ Resetear Sala de Guerra"):
+        if st.button("🗑️ Resetear Sala"):
             st.session_state.debate_data = None
             st.session_state.verdict = None
             st.rerun()
 
-    st.title("⚡ Synthetic Board 2.1: War Room")
+    st.title("⚡ Synthetic Board 2.2: Jarvis Edition")
     
-    if prompt := st.chat_input("Escribe el desafío estratégico aquí..."):
+    if prompt := st.chat_input("Desafío estratégico..."):
         if not api_key:
             st.error("⛔ Falta API Key.")
             return
-        
         st.session_state.current_prompt = prompt
         st.session_state.verdict = None 
-
         st.write(f"🧠 **Analizando:** '{prompt}'")
         
         agents = [
@@ -280,45 +260,41 @@ def main():
         ]
         
         temp_results = {}
-        with st.spinner("🔄 Los agentes están generando simulaciones gráficas..."):
+        with st.spinner("🔄 Agentes trabajando..."):
             with ThreadPoolExecutor(max_workers=3) as executor:
                 futures = {
                     executor.submit(get_agent_response, a["role"], a["focus"], prompt, file_content, api_key, selected_lang): a 
                     for a in agents
                 }
                 for future in futures:
-                    agent_meta = futures[future]
-                    temp_results[agent_meta["role"]] = future.result()
+                    meta = futures[future]
+                    temp_results[meta["role"]] = future.result()
         
         st.session_state.debate_data = temp_results
         st.rerun() 
 
     if st.session_state.debate_data:
-        
-        st.info(f"📋 Desafío Actual: **{st.session_state.current_prompt}**")
-        
+        st.info(f"📋 Desafío: **{st.session_state.current_prompt}**")
         tab1, tab2, tab3, tab4 = st.tabs(["🦁 CEO", "💰 CFO", "⚙️ COO", "⚖️ Presidente"])
 
-        def render_agent_tab(tab, agent_role, data):
+        def render_agent(tab, role, data):
             with tab:
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    st.subheader(f"Análisis del {agent_role}")
+                c1, c2 = st.columns([2, 1])
+                with c1:
+                    st.subheader(f"Análisis {role}")
                     st.markdown(data.get("analysis", "Sin datos"))
-                with col2:
-                    st.subheader("📊 Proyección")
+                with c2:
+                    st.subheader("📊 Datos")
                     st.caption(data.get("chart_title", "Métricas"))
-                    chart_data = data.get("chart_data", {})
-                    if chart_data:
-                        df = pd.DataFrame(list(chart_data.items()), columns=["Concepto", "Valor"])
-                        st.bar_chart(df.set_index("Concepto"))
-                    else:
-                        st.warning("No hay datos gráficos.")
+                    cdata = data.get("chart_data", {})
+                    if cdata:
+                        df = pd.DataFrame(list(cdata.items()), columns=["K", "V"])
+                        st.bar_chart(df.set_index("K"))
 
         results = st.session_state.debate_data
-        render_agent_tab(tab1, "CEO (Visionario)", results["CEO (Visionario)"])
-        render_agent_tab(tab2, "CFO (Crítico)", results["CFO (Crítico)"])
-        render_agent_tab(tab3, "COO (Ejecutor)", results["COO (Ejecutor)"])
+        render_agent(tab1, "CEO (Visionario)", results["CEO (Visionario)"])
+        render_agent(tab2, "CFO (Crítico)", results["CFO (Crítico)"])
+        render_agent(tab3, "COO (Ejecutor)", results["COO (Ejecutor)"])
 
         with tab4:
             st.header("👨‍⚖️ Veredicto Final")
@@ -327,7 +303,17 @@ def main():
                 st.success("Dictamen Emitido:")
                 st.markdown(st.session_state.verdict)
                 
-                with st.spinner("📄 Generando Informe Oficial con Gráficos..."):
+                # --- AUDIO PLAYER ---
+                st.markdown("---")
+                st.subheader("🔊 Escuchar Veredicto")
+                with st.spinner("Sintetizando voz neural..."):
+                    audio_bytes = generate_audio(st.session_state.verdict, selected_lang)
+                    if audio_bytes:
+                        st.audio(audio_bytes, format="audio/mp3")
+                
+                # --- PDF DOWNLOAD ---
+                st.markdown("---")
+                with st.spinner("📄 Generando Informe..."):
                     try:
                         pdf_bytes = create_pdf(
                             st.session_state.current_prompt,
@@ -335,41 +321,24 @@ def main():
                             st.session_state.verdict,
                             selected_lang
                         )
-                        
-                        st.download_button(
-                            label="📄 Descargar Informe Oficial (PDF)",
-                            data=pdf_bytes,
-                            file_name="synthetic_board_report.pdf",
-                            mime="application/pdf"
-                        )
-                    except Exception as e:
-                        st.error(f"Error generando PDF: {str(e)}")
+                        st.download_button("📄 Descargar Informe Oficial (PDF)", pdf_bytes, "report.pdf", "application/pdf")
+                    except Exception as e: st.error(f"PDF Error: {e}")
                 
                 if st.button("🔄 Re-evaluar"):
                     st.session_state.verdict = None
                     st.rerun()
             else:
                 if st.button("🔨 Emitir Sentencia Vinculante"):
-                    if not api_key:
-                        st.error("Falta API Key")
+                    if not api_key: st.error("Falta API Key")
                     else:
-                        with st.spinner("El Presidente está deliberando..."):
+                        with st.spinner("Deliberando..."):
                             client = genai.Client(api_key=api_key)
                             debate_context = json.dumps(st.session_state.debate_data)
-                            
                             final_prompt = f"""
-                            ACT AS: Chairman of the Board.
-                            INPUT: Review JSON analysis from CEO, CFO, COO: {debate_context}
-                            PROBLEM: {st.session_state.current_prompt}
-                            LANGUAGE: {selected_lang}
-                            OUTPUT: A Markdown summary of the decision. Be authoritative.
+                            ACT AS: Chairman. INPUT: {debate_context}. PROBLEM: {st.session_state.current_prompt}. 
+                            LANG: {selected_lang}. OUTPUT: Markdown verdict.
                             """
-                            
-                            response = client.models.generate_content(
-                                model="gemini-2.0-flash",
-                                contents=final_prompt
-                            )
-                            
+                            response = client.models.generate_content(model="gemini-2.0-flash", contents=final_prompt)
                             st.session_state.verdict = response.text
                             st.rerun()
 
