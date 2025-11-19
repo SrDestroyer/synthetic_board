@@ -1,7 +1,8 @@
 from google import genai
 
-# ⚠️ PEGA TU API KEY AQUÍ ABAJO
-api_key = "AIzaSyD25MUFU4pxbcziDt4w-SJ8mHyiACbi6XE" 
+# ⚠️ PEGA TU API KEY
+#  AQUÍ ABAJO
+api_key = "AIza..." 
 
 print("🔍 Escaneando red neuronal de Google...")
 
